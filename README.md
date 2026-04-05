@@ -141,6 +141,11 @@ npm install
 cp .env.example .env
 ```
 
+Dependências instaladas por esse `npm install`:
+- Runtime backend: `express`, `dotenv`, `better-sqlite3`
+- Runtime IA/frontend já existente: `@google/genai`, `react`, `react-dom`, `lucide-react`
+- Dev: `typescript`, `tsx`, `@types/node`, `@types/express`, `vite`, `@vitejs/plugin-react`
+
 ### 4.3 Configuração mínima (`.env`)
 - `ANTHROPIC_API_KEY`: chave Claude (opcional; sem ela usa fallback mock)
 - `EVOLUTION_BASE_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_INSTANCE_NAME`, `EVOLUTION_WEBHOOK_URL`
@@ -151,6 +156,8 @@ cp .env.example .env
 npm run db:seed
 npm run dev:backend
 ```
+
+> Observação: ao subir o backend, o seed também é validado automaticamente no boot. Rodar `db:seed` antes é a forma mais previsível para demo.
 
 ### 4.5 Endpoints úteis
 - Health: `GET /health`
@@ -222,3 +229,133 @@ Cliente: “Tenho 20 mil de entrada, quero agendar visita hoje.”
 - O MVP **não inventa dados**: respostas de veículos dependem do estoque no banco.
 - Sem Evolution configurada, envio WhatsApp fica mockado via console.
 - Sem Claude API key, resposta cai em fallback seguro/comercial.
+
+---
+
+## Etapa prática (execução ponta a ponta)
+
+Esta seção é o roteiro direto para você testar um lead real (ou mockado).
+
+### 1) Checklist de execução
+
+- [ ] Node 20+ instalado
+- [ ] Evolution API disponível (ou teste mock sem Evolution)
+- [ ] `.env` criado com dados do vendedor
+- [ ] Dependências instaladas (`npm install`)
+- [ ] Banco seedado (`npm run db:seed`)
+- [ ] Backend rodando (`npm run dev:backend`)
+- [ ] Webhook Evolution apontando para `POST /webhooks/whatsapp`
+- [ ] Mensagem de lead enviada via WhatsApp (ou via curl de webhook)
+
+### 2) Comandos de terminal em ordem
+
+```bash
+# 1) Instalar dependências
+npm install
+
+# 2) Criar arquivo de ambiente
+cp .env.example .env
+
+# 3) (Opcional) editar .env com suas credenciais
+# ANTHROPIC_API_KEY, EVOLUTION_*, SELLER_*
+
+# 4) Criar schema + seed de veículos
+npm run db:seed
+
+# 5) Subir backend
+npm run dev:backend
+
+# 6) (Em outro terminal) validar saúde da API
+curl -X GET http://localhost:3333/health
+
+# 7) (Se usar Evolution) criar/conectar instância para QR
+curl -X POST http://localhost:3333/whatsapp/setup
+```
+
+### 3) Variáveis `.env` obrigatórias
+
+Obrigatórias para rodar backend:
+- `PORT`
+- `DB_PATH`
+- `SELLER_NAME`
+- `SELLER_PHONE`
+- `SELLER_WHATSAPP`
+
+Obrigatórias para WhatsApp real com Evolution:
+- `EVOLUTION_BASE_URL`
+- `EVOLUTION_API_KEY`
+- `EVOLUTION_INSTANCE_NAME`
+- `EVOLUTION_WEBHOOK_URL`
+
+Opcional (IA com Claude):
+- `ANTHROPIC_API_KEY`
+- `ANTHROPIC_MODEL`
+
+### 4) Fluxo completo esperado (real)
+
+1. **Iniciar servidor**  
+   `npm run dev:backend`
+2. **Seed do banco**  
+   `npm run db:seed`
+3. **Conectar WhatsApp (Evolution API)**  
+   `POST /whatsapp/setup` e escanear QR na Evolution
+4. **Receber mensagem de lead**  
+   Evolution envia webhook para `/webhooks/whatsapp`
+5. **Consultar estoque**  
+   Serviço busca em `vehicles` com filtros por termo/preço
+6. **Enviar resposta**  
+   Envia texto com base no estoque + contexto do lead
+7. **Enviar foto**  
+   Se lead pedir fotos, dispara URLs salvas no veículo
+8. **Classificar lead**  
+   Score atualizado e temperatura (frio/morno/quente)
+9. **Handoff para vendedor**  
+   Quando quente, registra resumo e envia contato do vendedor
+
+### 5) Teste mesmo sem Evolution/Claude (mock funcional)
+
+Se você não tiver Evolution ou Claude agora:
+- Deixe `EVOLUTION_API_KEY` e `ANTHROPIC_API_KEY` vazias
+- O backend continua funcional:
+  - resposta de IA usa fallback
+  - envio WhatsApp vira log no console (`[MOCK WhatsApp]`)
+
+Payload mock para simular entrada:
+
+```bash
+curl -X POST http://localhost:3333/webhooks/whatsapp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from": "5511999990000",
+    "text": "Tem Corolla automático? Me manda fotos e o valor"
+  }'
+```
+
+Payload para forçar lead quente + handoff:
+
+```bash
+curl -X POST http://localhost:3333/webhooks/whatsapp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from": "5511999990000",
+    "text": "Tenho 20 mil de entrada, quero financiar e agendar visita hoje"
+  }'
+```
+
+Consultar histórico/resumo após testes:
+
+```bash
+curl -X GET http://localhost:3333/leads/1
+curl -X GET http://localhost:3333/leads/1/resumo
+```
+
+### 6) Exemplo de conversa ponta a ponta
+
+1. Lead: `Tem Corolla automático até 130 mil?`
+2. IA: retorna opções reais de estoque e pergunta próximo passo.
+3. Lead: `Me manda fotos e condições de financiamento`
+4. IA: envia texto + fotos; marca interesse em financiamento.
+5. Lead: `Tenho 20 mil de entrada e quero fechar essa semana`
+6. Sistema eleva score para quente.
+7. IA:  
+   `Perfeito. Pelo que você me passou, o melhor agora é te conectar direto com nosso vendedor para agilizar tudo. Segue o contato dele: {SELLER_NAME} - {SELLER_WHATSAPP}`
