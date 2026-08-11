@@ -1,4 +1,4 @@
-# 4F Motors AI Sales Attendant (MVP)
+<p align="center">\n  <img src="./4f-motors-ai-sales.png" alt="4F Motors AI Sales preview" width="100%" />\n</p>\n\n# 4F Motors AI Sales Attendant (MVP)
 
 MVP funcional de atendimento comercial com IA para WhatsApp, com foco em conversão de leads e handoff inteligente para vendedor humano.
 
